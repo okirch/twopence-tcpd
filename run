@@ -13,7 +13,7 @@ journal = None
 client = None
 server = None
 
-twopence.setDebugLevel(0)
+# twopence.setDebugLevel(0)
 
 ##################################################################
 # Set up the test suite
