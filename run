@@ -1,0 +1,182 @@
+#!/usr/bin/python
+#
+# Copyright (C) 2014, 2015 Olaf Kirch <okir@suse.de>
+#
+
+import twopence
+import susetest
+import suselog
+import re
+
+testuser = "testuser"
+journal = None
+client = None
+server = None
+
+twopence.setDebugLevel(0)
+
+##################################################################
+# Set up the test suite
+##################################################################
+def setup():
+	global client, server, journal
+
+	config = susetest.Config()
+	reportPath = config.value("report")
+	if not reportPath:
+		reportPath = "report.xml"
+	journal = suselog.Journal("tcpd", path = reportPath);
+
+	journal.beginGroup("setup")
+
+	client = config.target("client")
+	server = config.target("server")
+
+	if not client.ipaddr:
+		journal.fatal("No IP address set for client");
+	if not server.ipaddr:
+		journal.fatal("No IP address set for server");
+
+
+##################################################################
+# Helper functions
+##################################################################
+def run(node, command):
+	global testuser
+
+	cmd = twopence.Command(command, user = testuser)
+
+	journal.info(node.name + ": " + cmd.commandline)
+	status = node.run(cmd)
+	if not status:
+		journal.info("command failed: " + status.message)
+
+	journal.recordStdout(status.stdout);
+	if status.stdout != status.stderr:
+		journal.recordStderr(status.stderr);
+	
+	return status
+
+def run_tcpdmatch(node, args):
+	return run(node, "/usr/sbin/tcpdmatch -d -i /dev/null " + args)
+
+def sendbuffer(node, filename, buffer):
+	global testuser
+
+	journal.info(node.name + ": uploading data to " + filename)
+
+	xfer = twopence.Transfer(filename, user = testuser, data = bytearray(buffer))
+	journal.info("<<< --- Data: ---\n" + str(xfer.data) + "\n --- End of Data --->>>\n");
+	return node.sendfile(xfer)
+
+##################################################################
+# Check the output of tcpdmatch
+# As it checks the various rules, it will print any number of
+# "denied" messages, and possibly one "granted" message.
+# If any rule grants access, then we have a winner.
+##################################################################
+def tcpdmatch_verdict(status):
+	lines = str(status.stdout).split('\n')
+	for l in lines:
+		if l.find("access:") >= 0:
+			if l.find("granted") >= 0:
+				return "granted"
+			if l.find("denied") < 0:
+				return "failed"
+	return "denied"
+
+def tcpdmatch_expect(service, address, expected_result):
+	global client
+
+	journal.beginTest(None, "Matching service=%s address=%s, expect result=%s"
+				% (service, address, expected_result))
+	status = run_tcpdmatch(client, service + " " + address)
+	if not status:
+		journal.failure("command failed")
+		return
+	
+	result = tcpdmatch_verdict(status)
+	if result == expected_result:
+		journal.success("Good, tcpdmatch returns expected result")
+	else:
+		journal.failure("Oops: tcpdmatch returns %s, but it should have returned %s" % (result, expected_result))
+
+
+def tcpdmatch_test():
+	global client
+
+	hosts_allow = '''
+rsyncd : localhost : ALLOW
+rsyncd : 127.0.0.1 : ALLOW
+
+one    : 192.168.9. : DENY
+one    : 192.168. : ALLOW
+
+two    : 192.168.9.0/24 : DENY
+two    : 192.168.0.0/16 : ALLOW
+
+three  : 192.168.9.0/255.255.255.0 : DENY
+three  : 192.168.0.0/255.255.0.0 : ALLOW
+
+four   : @MYHOSTNAME@ : ALLOW
+
+six    : [3ffe:505:2:1::babe] : ALLOW
+six    : [3ffe:505:3:1::/64] : ALLOW
+six    : [3ffe:505:4:1::]/64 : ALLOW
+six    : [3ffe:505:5:1::]/64 : DENY
+'''
+
+	hosts_deny = '''
+ALL    : ALL
+'''
+
+	journal.beginTest("initialize tcpdmatch testing")
+	status = run(client, "hostname -f")
+	if not status:
+		journal.error("cannot get fully qualified hostname")
+		return
+	fqdn = str(status.stdout).strip()
+	if not fqdn:
+		journal.error("cannot get fully qualified hostname")
+		return
+
+	hosts_allow = re.sub('@MYHOSTNAME@', fqdn, hosts_allow)
+
+	if not sendbuffer(client, "hosts.allow", hosts_allow):
+		journal.error("Unable to send hosts.allow file")
+		return
+	if not sendbuffer(client, "hosts.deny", hosts_deny):
+		journal.error("Unable to send hosts.deny file")
+		return
+
+	tcpdmatch_expect("rsyncd",	"localhost",		"granted")
+	tcpdmatch_expect("rsyncd",	"127.0.0.1",		"granted")
+	tcpdmatch_expect("rsyncd",	"::1",			"granted")
+	tcpdmatch_expect("rsyncd",	"192.168.1.1",		"denied")
+
+	tcpdmatch_expect("one",		"192.168.1.1",		"granted")
+	tcpdmatch_expect("one",		"192.168.9.1",		"denied")
+
+	tcpdmatch_expect("two",		"192.168.1.1",		"granted")
+	tcpdmatch_expect("two",		"192.168.9.1",		"denied")
+
+	tcpdmatch_expect("three",	"192.168.1.1",		"granted")
+	tcpdmatch_expect("three",	"192.168.9.1",		"denied")
+
+	tcpdmatch_expect("four",	fqdn,			"granted")
+
+	tcpdmatch_expect("six",		"3ffe:505:2:1::babe",	"granted")
+	tcpdmatch_expect("six",		"3ffe:505:2:2::1",	"denied")
+	tcpdmatch_expect("six",		"3ffe:505:3:1::1",	"granted")
+	tcpdmatch_expect("six",		"3ffe:505:4:1::1",	"granted")
+	tcpdmatch_expect("six",		"3ffe:505:5:1::1",	"denied")
+
+	# run(client, "rm -f hosts.allow")
+
+def main():
+	setup()
+	tcpdmatch_test()
+
+	journal.writeReport()
+
+main()
