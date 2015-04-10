@@ -8,7 +8,6 @@ import susetest
 import suselog
 import re
 
-testuser = "testuser"
 journal = None
 client = None
 server = None
@@ -21,15 +20,17 @@ server = None
 def setup():
 	global client, server, journal
 
-	config = susetest.Config()
-	reportPath = config.value("report")
-	if not reportPath:
-		reportPath = "report.xml"
-	journal = suselog.Journal("tcpd", path = reportPath);
+	config = susetest.Config("tcpd")
+
+	journal = config.journal
 
 	journal.beginGroup("setup")
 
-	client = config.target("client")
+	clientConfig = config.node("client")
+	#client = twopence.Target(clientConfig.target, clientConfig.attrs, clientConfig.name)
+	client = susetest.Target(clientConfig)
+	client.defaultUser = "testuser"
+
 	server = config.target("server")
 
 	if not client.ipaddr:
@@ -41,33 +42,8 @@ def setup():
 ##################################################################
 # Helper functions
 ##################################################################
-def run(node, command):
-	global testuser
-
-	cmd = twopence.Command(command, user = testuser)
-
-	journal.info(node.name + ": " + cmd.commandline)
-	status = node.run(cmd)
-	if not status:
-		journal.info("command failed: " + status.message)
-
-	journal.recordStdout(status.stdout);
-	if status.stdout != status.stderr:
-		journal.recordStderr(status.stderr);
-	
-	return status
-
 def run_tcpdmatch(node, args):
-	return run(node, "/usr/sbin/tcpdmatch -d -i /dev/null " + args)
-
-def sendbuffer(node, filename, buffer):
-	global testuser
-
-	journal.info(node.name + ": uploading data to " + filename)
-
-	xfer = twopence.Transfer(filename, user = testuser, data = bytearray(buffer))
-	journal.info("<<< --- Data: ---\n" + str(xfer.data) + "\n --- End of Data --->>>\n");
-	return node.sendfile(xfer)
+	return node.run("/usr/sbin/tcpdmatch -d -i /dev/null " + args)
 
 ##################################################################
 # Check the output of tcpdmatch
@@ -131,7 +107,7 @@ ALL    : ALL
 '''
 
 	journal.beginTest("initialize tcpdmatch testing")
-	status = run(client, "hostname -f")
+	status = client.run("hostname -f")
 	if not status:
 		journal.error("cannot get fully qualified hostname")
 		return
@@ -142,10 +118,10 @@ ALL    : ALL
 
 	hosts_allow = re.sub('@MYHOSTNAME@', fqdn, hosts_allow)
 
-	if not sendbuffer(client, "hosts.allow", hosts_allow):
+	if not client.sendbuffer("hosts.allow", hosts_allow):
 		journal.error("Unable to send hosts.allow file")
 		return
-	if not sendbuffer(client, "hosts.deny", hosts_deny):
+	if not client.sendbuffer("hosts.deny", hosts_deny):
 		journal.error("Unable to send hosts.deny file")
 		return
 
@@ -171,7 +147,7 @@ ALL    : ALL
 	tcpdmatch_expect("six",		"3ffe:505:4:1::1",	"granted")
 	tcpdmatch_expect("six",		"3ffe:505:5:1::1",	"denied")
 
-	# run(client, "rm -f hosts.allow")
+	# client.run("rm -f hosts.allow")
 
 def main():
 	setup()
