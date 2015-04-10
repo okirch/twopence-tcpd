@@ -27,11 +27,12 @@ def setup():
 	journal.beginGroup("setup")
 
 	clientConfig = config.node("client")
-	#client = twopence.Target(clientConfig.target, clientConfig.attrs, clientConfig.name)
 	client = susetest.Target(clientConfig)
 	client.defaultUser = "testuser"
 
-	server = config.target("server")
+	serverConfig = config.node("server")
+	server = susetest.Target(serverConfig)
+	server.defaultUser = "testuser"
 
 	if not client.ipaddr:
 		journal.fatal("No IP address set for client");
@@ -106,7 +107,8 @@ six    : [3ffe:505:5:1::]/64 : DENY
 ALL    : ALL
 '''
 
-	journal.beginTest("initialize tcpdmatch testing")
+	journal.beginGroup("tcpdmatch")
+	journal.beginTest(None, "initialize tcpdmatch testing")
 	status = client.run("hostname -f")
 	if not status:
 		journal.error("cannot get fully qualified hostname")
@@ -149,9 +151,193 @@ ALL    : ALL
 
 	# client.run("rm -f hosts.allow")
 
+##################################################################
+# Test rsh with tcpwrappers
+##################################################################
+def rsh_test_systemd():
+	global client
+
+	rsh_socket = '''
+[Unit]
+Description=BSD rsh service
+
+[Socket]
+ListenStream=514
+Accept=yes
+
+[Install]
+WantedBy=sockets.target
+'''
+
+	rsh_at_service = '''
+[Unit]
+Description=BSD rshd
+DefaultDependencies=no
+Requires=rsh.socket
+After=rsh.socket
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=-@/usr/sbin/tcpd /usr/sbin/in.rshd
+StandardInput=socket
+
+[Install]
+WantedBy=multi-user.target
+Also=rsh.socket
+'''
+
+	journal.beginGroup("rsh")
+	journal.beginTest(None, "initialize tcpd rsh testing")
+
+	print server.__dict__
+	server.run("id", user = "testuser")
+	if not server.sendbuffer("/usr/lib/systemd/system/rsh.socket", rsh_socket, user = 'root'):
+		journal.error("Unable to install systemd unit file");
+		return
+	if not server.sendbuffer("/usr/lib/systemd/system/rsh@.service", rsh_at_service, user = 'root'):
+		journal.error("Unable to install systemd unit file");
+		return
+	if not server.run("systemctl daemon-reload", user = "root") or \
+	   not server.run("systemctl start rsh.socket", user = "root"):
+		journal.error("Failed to start rsh.socket")
+		return
+
+	# Install a valid rhosts file in testuser's account
+	if not server.sendbuffer(".rhosts", "%s testuser\n" % client.ipaddr, user = 'testuser'):
+		journal.error("Unable to install .rhosts file");
+		return
+
+	fqdn = "client.testing.suse.de"
+	domain = "testing.suse.de"
+
+	if not server.addHostEntry(client.ipaddr, fqdn):
+		journal.error("Unable to update hosts file");
+		return
+
+	# By default, deny everything (except for sshd, which twopence may be relying on)
+	if not rsh_send_host_deny("sshd : ALL : ALLOW", "ALL : ALL : DENY"):
+		journal.error("Unable to send hosts.deny file")
+		return
+
+	journal.beginTest(None, "test ALL:ALL:ALLOW")
+	if not rsh_send_host_allow("ALL : ALL : ALLOW"):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	journal.beginTest(None, "test empty hosts.allow")
+	if not rsh_send_host_allow():
+		return
+	rsh_should_fail(server.ipaddr)
+
+	journal.beginTest(None, "test rshd:ALL:ALLOW")
+	if not rsh_send_host_allow("in.rshd : ALL : ALLOW"):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	journal.beginTest(None, "test rshd: <ipaddr> :ALLOW")
+	if not rsh_send_host_allow("in.rshd : %s : ALLOW" % client.ipaddr):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	journal.beginTest(None, "test rshd:ALL EXCEPT <ipaddr>:ALLOW")
+	if not rsh_send_host_allow("in.rshd : ALL EXCEPT %s: ALLOW" % client.ipaddr):
+		return
+	rsh_should_fail(server.ipaddr)
+
+	journal.beginTest(None, "test rshd:ALL EXCEPT <ipaddr>:DENY")
+	if not rsh_send_host_allow("in.rshd : ALL EXCEPT %s: DENY" % client.ipaddr, "in.rshd : ALL : ALLOW"):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	ipnetwork = re.sub("\.[0-9]*$", "", client.ipaddr)
+	journal.beginTest(None, "test rshd: <ipnetwork> :ALLOW")
+	if not rsh_send_host_allow("in.rshd : %s. : ALLOW" % ipnetwork):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	journal.beginTest(None, "test rshd:ALL EXCEPT <ipnetwork>:DENY")
+	if not rsh_send_host_allow("in.rshd : ALL EXCEPT %s.: DENY" % ipnetwork, "in.rshd : ALL : ALLOW"):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	journal.beginTest(None, "test rshd:ALL EXCEPT <ipaddr/netmask>:DENY")
+	if not rsh_send_host_allow("in.rshd : %s.0/255.255.255.0 : ALLOW" % ipnetwork):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	journal.beginTest(None, "test rshd:ALL EXCEPT <ipaddr/prefix>:DENY")
+	if not rsh_send_host_allow("in.rshd : %s.0/24 : ALLOW" % ipnetwork):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	if not server.sendbuffer(".rhosts", "%s testuser\n" % fqdn, user = 'testuser'):
+		journal.error("Unable to install .rhosts file");
+		return
+
+	journal.beginTest(None, "test rshd: <hostname> :ALLOW")
+	if not rsh_send_host_allow("in.rshd : %s : ALLOW" % fqdn):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	journal.beginTest(None, "test rshd:ALL EXCEPT <hostname>:DENY")
+	if not rsh_send_host_allow("in.rshd : ALL EXCEPT %s: DENY" % fqdn, "in.rshd : ALL : ALLOW"):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+	journal.beginTest(None, "test rshd: .<domainname> :ALLOW")
+	if not rsh_send_host_allow("in.rshd : .%s : ALLOW" % domain):
+		return
+	rsh_should_succeed(server.ipaddr)
+
+
+def rsh_send_host_deny(*lines):
+	data = "\n".join(lines) + "\n"
+	if not server.sendbuffer("/etc/hosts.deny", data, user = 'root'):
+		journal.error("Unable to send hosts.allow file")
+		return False
+	return True
+
+def rsh_send_host_allow(*lines):
+	data = "\n".join(lines) + "\n"
+	if not server.sendbuffer("/etc/hosts.allow", data, user = 'root'):
+		journal.error("Unable to send hosts.allow file")
+		return False
+	return True
+
+
+def rsh_should_succeed(hostname):
+	global client
+
+	status = client.run("rsh %s echo hello" % hostname, user = 'testuser')
+	if not status:
+		journal.failure("rsh failed (but was expected to succeed)")
+		return False
+
+	response = str(status.stdout).strip()
+	if response != "hello":
+		journal.failure("rsh produced unexpected output \"%s\"" % response);
+		return False
+	
+	journal.success("rsh succeeded and returned string \"%s\"" % response)
+	return True
+
+def rsh_should_fail(hostname):
+	global client
+
+	status = client.run("rsh %s echo hello" % hostname, user = 'testuser')
+	if not status:
+		journal.success("rsh access was denied, as expected")
+		return True
+	
+	journal.failure("rsh succeeded - access should have been denied")
+	return True
+
+
 def main():
 	setup()
-	tcpdmatch_test()
+	# tcpdmatch_test()
+	rsh_test_systemd()
 
 	journal.writeReport()
 
