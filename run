@@ -336,7 +336,7 @@ def rsh_should_fail(hostname):
 
 def main():
 	setup()
-	# tcpdmatch_test()
+	tcpdmatch_test()
 	rsh_test_systemd()
 
 	journal.writeReport()
