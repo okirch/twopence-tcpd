@@ -44,7 +44,7 @@ def setup():
 # Helper functions
 ##################################################################
 def run_tcpdmatch(node, args):
-	return node.run("/usr/sbin/tcpdmatch -d -i /dev/null " + args)
+	return node.runOrFail("/usr/sbin/tcpdmatch -d -i /dev/null " + args)
 
 ##################################################################
 # Check the output of tcpdmatch
@@ -69,9 +69,8 @@ def tcpdmatch_expect(service, address, expected_result):
 				% (service, address, expected_result))
 	status = run_tcpdmatch(client, service + " " + address)
 	if not status:
-		journal.failure("command failed")
 		return
-	
+
 	result = tcpdmatch_verdict(status)
 	if result == expected_result:
 		journal.success("Good, tcpdmatch returns expected result")
@@ -190,8 +189,6 @@ Also=rsh.socket
 	journal.beginGroup("rsh")
 	journal.beginTest(None, "initialize tcpd rsh testing")
 
-	print server.__dict__
-	server.run("id", user = "testuser")
 	if not server.sendbuffer("/usr/lib/systemd/system/rsh.socket", rsh_socket, user = 'root'):
 		journal.error("Unable to install systemd unit file");
 		return
