@@ -1,9 +1,7 @@
 node    client
-repo    http://download.suse.de/ibs/Devel:/SLEnkins/${SYSTEM_CLIENT}/Devel:SLEnkins.repo
 install tcpd
 install rsh
 
 node    server
-repo    http://download.suse.de/ibs/Devel:/SLEnkins/${SYSTEM_SERVER}/Devel:SLEnkins.repo
 install tcpd
 install rsh-server
