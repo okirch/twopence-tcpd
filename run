@@ -103,6 +103,7 @@ six    : [3ffe:505:5:1::]/64 : DENY
 '''
 
 	hosts_deny = '''
+sshd   : ALL : ALLOW
 ALL    : ALL
 '''
 
@@ -151,10 +152,18 @@ ALL    : ALL
 	# client.run("rm -f hosts.allow")
 
 ##################################################################
-# Test rsh with tcpwrappers
+# Enable rsh
 ##################################################################
-def rsh_test_systemd():
-	global client
+def rsh_enable():
+	if server.run("test -d /usr/lib/systemd/system"):
+		return rsh_enable_systemd()
+
+	return rsh_enable_xinetd()
+
+##################################################################
+# Enable rsh in a systemd world
+##################################################################
+def rsh_enable_systemd():
 
 	rsh_socket = '''
 [Unit]
@@ -186,7 +195,6 @@ WantedBy=multi-user.target
 Also=rsh.socket
 '''
 
-	journal.beginGroup("rsh")
 	journal.beginTest(None, "initialize tcpd rsh testing")
 
 	if not server.sendbuffer("/usr/lib/systemd/system/rsh.socket", rsh_socket, user = 'root'):
@@ -199,6 +207,50 @@ Also=rsh.socket
 	   not server.run("systemctl start rsh.socket", user = "root"):
 		journal.error("Failed to start rsh.socket")
 		return
+
+##################################################################
+# Enable rsh in an xinetd world
+##################################################################
+def xinetd_enable_service(node, service):
+
+	journal.beginTest(None, "%s: enable service %s in xinetd" % (node.name, service))
+	filename = "/etc/xinetd.d/" + service
+
+	data = node.recvbuffer(filename)
+	if not data:
+		journal.error("unable to download %s" % filename)
+		return False
+	
+	result = []
+	for line in str(data).split('\n'):
+		words = line.split(" \t=")
+		if words[0] == 'disable':
+			line = "disable = no"
+		result.append(line)
+	data = '\n'.join(result) + '\n'
+	if not node.sendbuffer(filename, data):
+		journal.error("failed to upload %s" % filename)
+		return False
+
+	# When xinetd detects that there are no services, it will
+	# simply exit. So just a reload may fail.
+	if not node.run("rcxinetd restart"):
+		journal.error("unable to reload xinetd")
+		return False
+
+	journal.success()
+
+def rsh_enable_xinetd():
+
+	return xinetd_enable_service(server, "rsh")
+
+##################################################################
+# Test rsh with tcpwrappers
+##################################################################
+def rsh_test_systemd():
+
+	journal.beginGroup("rsh")
+	rsh_enable()
 
 	# Install a valid rhosts file in testuser's account
 	if not server.sendbuffer(".rhosts", "%s testuser\n" % client.ipaddr, user = 'testuser'):
