@@ -62,12 +62,11 @@ def tcpdmatch_verdict(status):
 				return "failed"
 	return "denied"
 
-def tcpdmatch_expect(service, address, expected_result):
-	global client
+def tcpdmatch_expect(node, service, address, expected_result):
 
 	journal.beginTest(None, "Matching service=%s address=%s, expect result=%s"
 				% (service, address, expected_result))
-	status = run_tcpdmatch(client, service + " " + address)
+	status = run_tcpdmatch(node, service + " " + address)
 	if not status:
 		return
 
@@ -78,8 +77,7 @@ def tcpdmatch_expect(service, address, expected_result):
 		journal.failure("Oops: tcpdmatch returns %s, but it should have returned %s" % (result, expected_result))
 
 
-def tcpdmatch_test():
-	global client
+def tcpdmatch_test(node):
 
 	hosts_allow = '''
 rsyncd : localhost : ALLOW
@@ -109,7 +107,7 @@ ALL    : ALL
 
 	journal.beginGroup("tcpdmatch")
 	journal.beginTest(None, "initialize tcpdmatch testing")
-	status = client.run("hostname -f")
+	status = node.run("hostname -f")
 	if not status:
 		journal.error("cannot get fully qualified hostname")
 		return
@@ -120,36 +118,36 @@ ALL    : ALL
 
 	hosts_allow = re.sub('@MYHOSTNAME@', fqdn, hosts_allow)
 
-	if not client.sendbuffer("hosts.allow", hosts_allow):
+	if not node.sendbuffer("hosts.allow", hosts_allow):
 		journal.error("Unable to send hosts.allow file")
 		return
-	if not client.sendbuffer("hosts.deny", hosts_deny):
+	if not node.sendbuffer("hosts.deny", hosts_deny):
 		journal.error("Unable to send hosts.deny file")
 		return
 
-	tcpdmatch_expect("rsyncd",	"localhost",		"granted")
-	tcpdmatch_expect("rsyncd",	"127.0.0.1",		"granted")
-	tcpdmatch_expect("rsyncd",	"::1",			"granted")
-	tcpdmatch_expect("rsyncd",	"192.168.1.1",		"denied")
+	tcpdmatch_expect(node, "rsyncd",	"localhost",		"granted")
+	tcpdmatch_expect(node, "rsyncd",	"127.0.0.1",		"granted")
+	tcpdmatch_expect(node, "rsyncd",	"::1",			"granted")
+	tcpdmatch_expect(node, "rsyncd",	"192.168.1.1",		"denied")
 
-	tcpdmatch_expect("one",		"192.168.1.1",		"granted")
-	tcpdmatch_expect("one",		"192.168.9.1",		"denied")
+	tcpdmatch_expect(node, "one",		"192.168.1.1",		"granted")
+	tcpdmatch_expect(node, "one",		"192.168.9.1",		"denied")
 
-	tcpdmatch_expect("two",		"192.168.1.1",		"granted")
-	tcpdmatch_expect("two",		"192.168.9.1",		"denied")
+	tcpdmatch_expect(node, "two",		"192.168.1.1",		"granted")
+	tcpdmatch_expect(node, "two",		"192.168.9.1",		"denied")
 
-	tcpdmatch_expect("three",	"192.168.1.1",		"granted")
-	tcpdmatch_expect("three",	"192.168.9.1",		"denied")
+	tcpdmatch_expect(node, "three",		"192.168.1.1",		"granted")
+	tcpdmatch_expect(node, "three",		"192.168.9.1",		"denied")
 
-	tcpdmatch_expect("four",	fqdn,			"granted")
+	tcpdmatch_expect(node, "four",		fqdn,			"granted")
 
-	tcpdmatch_expect("six",		"3ffe:505:2:1::babe",	"granted")
-	tcpdmatch_expect("six",		"3ffe:505:2:2::1",	"denied")
-	tcpdmatch_expect("six",		"3ffe:505:3:1::1",	"granted")
-	tcpdmatch_expect("six",		"3ffe:505:4:1::1",	"granted")
-	tcpdmatch_expect("six",		"3ffe:505:5:1::1",	"denied")
+	tcpdmatch_expect(node, "six",		"3ffe:505:2:1::babe",	"granted")
+	tcpdmatch_expect(node, "six",		"3ffe:505:2:2::1",	"denied")
+	tcpdmatch_expect(node, "six",		"3ffe:505:3:1::1",	"granted")
+	tcpdmatch_expect(node, "six",		"3ffe:505:4:1::1",	"granted")
+	tcpdmatch_expect(node, "six",		"3ffe:505:5:1::1",	"denied")
 
-	# client.run("rm -f hosts.allow")
+	# node.run("rm -f hosts.allow")
 
 ##################################################################
 # Enable rsh
@@ -216,7 +214,7 @@ def xinetd_enable_service(node, service):
 	journal.beginTest(None, "%s: enable service %s in xinetd" % (node.name, service))
 	filename = "/etc/xinetd.d/" + service
 
-	data = node.recvbuffer(filename)
+	data = node.recvbuffer(filename, user = 'root')
 	if not data:
 		journal.error("unable to download %s" % filename)
 		return False
@@ -228,13 +226,13 @@ def xinetd_enable_service(node, service):
 			line = "disable = no"
 		result.append(line)
 	data = '\n'.join(result) + '\n'
-	if not node.sendbuffer(filename, data):
+	if not node.sendbuffer(filename, data, user = 'root'):
 		journal.error("failed to upload %s" % filename)
 		return False
 
 	# When xinetd detects that there are no services, it will
 	# simply exit. So just a reload may fail.
-	if not node.run("rcxinetd restart"):
+	if not node.run("rcxinetd restart", user = 'root'):
 		journal.error("unable to reload xinetd")
 		return False
 
@@ -247,7 +245,7 @@ def rsh_enable_xinetd():
 ##################################################################
 # Test rsh with tcpwrappers
 ##################################################################
-def rsh_test_systemd():
+def test_rsh_acls():
 
 	journal.beginGroup("rsh")
 	rsh_enable()
@@ -385,8 +383,8 @@ def rsh_should_fail(hostname):
 
 def main():
 	setup()
-	tcpdmatch_test()
-	rsh_test_systemd()
+	tcpdmatch_test(server)
+	test_rsh_acls()
 
 	journal.writeReport()
 
