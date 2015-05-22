@@ -64,7 +64,7 @@ def tcpdmatch_verdict(status):
 
 def tcpdmatch_expect(node, service, address, expected_result):
 
-	journal.beginTest(None, "Matching service=%s address=%s, expect result=%s"
+	journal.beginTest("Matching service=%s address=%s, expect result=%s"
 				% (service, address, expected_result))
 	status = run_tcpdmatch(node, service + " " + address)
 	if not status:
@@ -106,7 +106,7 @@ ALL    : ALL
 '''
 
 	journal.beginGroup("tcpdmatch")
-	journal.beginTest(None, "initialize tcpdmatch testing")
+	journal.beginTest("initialize tcpdmatch testing")
 	status = node.run("hostname -f")
 	if not status:
 		journal.error("cannot get fully qualified hostname")
@@ -193,7 +193,7 @@ WantedBy=multi-user.target
 Also=rsh.socket
 '''
 
-	journal.beginTest(None, "initialize tcpd rsh testing")
+	journal.beginTest("initialize tcpd rsh testing")
 
 	if not server.sendbuffer("/usr/lib/systemd/system/rsh.socket", rsh_socket, user = 'root'):
 		journal.error("Unable to install systemd unit file");
@@ -211,7 +211,7 @@ Also=rsh.socket
 ##################################################################
 def xinetd_enable_service(node, service):
 
-	journal.beginTest(None, "%s: enable service %s in xinetd" % (node.name, service))
+	journal.beginTest("%s: enable service %s in xinetd" % (node.name, service))
 	filename = "/etc/xinetd.d/" + service
 
 	data = node.recvbuffer(filename, user = 'root')
@@ -267,53 +267,53 @@ def test_rsh_acls():
 		journal.error("Unable to send hosts.deny file")
 		return
 
-	journal.beginTest(None, "test ALL:ALL:ALLOW")
+	journal.beginTest("test ALL:ALL:ALLOW")
 	if not rsh_send_host_allow("ALL : ALL : ALLOW"):
 		return
 	rsh_should_succeed(server.ipaddr)
 
-	journal.beginTest(None, "test empty hosts.allow")
+	journal.beginTest("test empty hosts.allow")
 	if not rsh_send_host_allow():
 		return
 	rsh_should_fail(server.ipaddr)
 
-	journal.beginTest(None, "test rshd:ALL:ALLOW")
+	journal.beginTest("test rshd:ALL:ALLOW")
 	if not rsh_send_host_allow("in.rshd : ALL : ALLOW"):
 		return
 	rsh_should_succeed(server.ipaddr)
 
-	journal.beginTest(None, "test rshd: <ipaddr> :ALLOW")
+	journal.beginTest("test rshd: <ipaddr> :ALLOW")
 	if not rsh_send_host_allow("in.rshd : %s : ALLOW" % client.ipaddr):
 		return
 	rsh_should_succeed(server.ipaddr)
 
-	journal.beginTest(None, "test rshd:ALL EXCEPT <ipaddr>:ALLOW")
+	journal.beginTest("test rshd:ALL EXCEPT <ipaddr>:ALLOW")
 	if not rsh_send_host_allow("in.rshd : ALL EXCEPT %s: ALLOW" % client.ipaddr):
 		return
 	rsh_should_fail(server.ipaddr)
 
-	journal.beginTest(None, "test rshd:ALL EXCEPT <ipaddr>:DENY")
+	journal.beginTest("test rshd:ALL EXCEPT <ipaddr>:DENY")
 	if not rsh_send_host_allow("in.rshd : ALL EXCEPT %s: DENY" % client.ipaddr, "in.rshd : ALL : ALLOW"):
 		return
 	rsh_should_succeed(server.ipaddr)
 
 	ipnetwork = re.sub("\.[0-9]*$", "", client.ipaddr)
-	journal.beginTest(None, "test rshd: <ipnetwork> :ALLOW")
+	journal.beginTest("test rshd: <ipnetwork> :ALLOW")
 	if not rsh_send_host_allow("in.rshd : %s. : ALLOW" % ipnetwork):
 		return
 	rsh_should_succeed(server.ipaddr)
 
-	journal.beginTest(None, "test rshd:ALL EXCEPT <ipnetwork>:DENY")
+	journal.beginTest("test rshd:ALL EXCEPT <ipnetwork>:DENY")
 	if not rsh_send_host_allow("in.rshd : ALL EXCEPT %s.: DENY" % ipnetwork, "in.rshd : ALL : ALLOW"):
 		return
 	rsh_should_succeed(server.ipaddr)
 
-	journal.beginTest(None, "test rshd:ALL EXCEPT <ipaddr/netmask>:DENY")
+	journal.beginTest("test rshd:ALL EXCEPT <ipaddr/netmask>:DENY")
 	if not rsh_send_host_allow("in.rshd : %s.0/255.255.255.0 : ALLOW" % ipnetwork):
 		return
 	rsh_should_succeed(server.ipaddr)
 
-	journal.beginTest(None, "test rshd:ALL EXCEPT <ipaddr/prefix>:DENY")
+	journal.beginTest("test rshd:ALL EXCEPT <ipaddr/prefix>:DENY")
 	if not rsh_send_host_allow("in.rshd : %s.0/24 : ALLOW" % ipnetwork):
 		return
 	rsh_should_succeed(server.ipaddr)
@@ -322,17 +322,17 @@ def test_rsh_acls():
 		journal.error("Unable to install .rhosts file");
 		return
 
-	journal.beginTest(None, "test rshd: <hostname> :ALLOW")
+	journal.beginTest("test rshd: <hostname> :ALLOW")
 	if not rsh_send_host_allow("in.rshd : %s : ALLOW" % fqdn):
 		return
 	rsh_should_succeed(server.ipaddr)
 
-	journal.beginTest(None, "test rshd:ALL EXCEPT <hostname>:DENY")
+	journal.beginTest("test rshd:ALL EXCEPT <hostname>:DENY")
 	if not rsh_send_host_allow("in.rshd : ALL EXCEPT %s: DENY" % fqdn, "in.rshd : ALL : ALLOW"):
 		return
 	rsh_should_succeed(server.ipaddr)
 
-	journal.beginTest(None, "test rshd: .<domainname> :ALLOW")
+	journal.beginTest("test rshd: .<domainname> :ALLOW")
 	if not rsh_send_host_allow("in.rshd : .%s : ALLOW" % domain):
 		return
 	rsh_should_succeed(server.ipaddr)
