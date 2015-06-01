@@ -26,12 +26,10 @@ def setup():
 
 	journal.beginGroup("setup")
 
-	clientConfig = config.node("client")
-	client = susetest.Target(clientConfig)
+	client = config.target("client")
 	client.defaultUser = "testuser"
 
-	serverConfig = config.node("server")
-	server = susetest.Target(serverConfig)
+	server = config.target("server")
 	server.defaultUser = "testuser"
 
 	if not client.ipaddr:
@@ -118,10 +116,10 @@ ALL    : ALL
 
 	hosts_allow = re.sub('@MYHOSTNAME@', fqdn, hosts_allow)
 
-	if not node.sendbuffer("hosts.allow", hosts_allow):
+	if not node.sendbuffer("hosts.allow", hosts_allow, user = 'root'):
 		journal.error("Unable to send hosts.allow file")
 		return
-	if not node.sendbuffer("hosts.deny", hosts_deny):
+	if not node.sendbuffer("hosts.deny", hosts_deny, user = 'root'):
 		journal.error("Unable to send hosts.deny file")
 		return
 
@@ -249,6 +247,9 @@ def test_rsh_acls():
 
 	journal.beginGroup("rsh")
 	rsh_enable()
+
+	# Eric's test image creator is currently broken
+	server.run("chown testuser ~testuser", user = 'root')
 
 	# Install a valid rhosts file in testuser's account
 	if not server.sendbuffer(".rhosts", "%s testuser\n" % client.ipaddr, user = 'testuser'):
