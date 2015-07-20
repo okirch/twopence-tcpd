@@ -42,7 +42,7 @@ def setup():
 # Helper functions
 ##################################################################
 def run_tcpdmatch(node, args):
-	return node.runOrFail("/usr/sbin/tcpdmatch -d -i /dev/null " + args)
+	return node.runOrFail("/usr/sbin/tcpdmatch -d -i /dev/null " + args, user = 'root')
 
 ##################################################################
 # Check the output of tcpdmatch
