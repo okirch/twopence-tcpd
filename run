@@ -387,6 +387,6 @@ def main():
 	tcpdmatch_test(server)
 	test_rsh_acls()
 
-	journal.writeReport()
+	susetest.finish(journal)
 
 main()
