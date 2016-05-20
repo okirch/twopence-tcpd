@@ -1,0 +1,16 @@
+{
+  "name": "twopence-tcpd",
+  "summary": "Test suite for tcpd",
+  "description": "SLEnkins test suite for tcpd janitor for incoming TCP connections.",
+  "status": "ready",
+  "maintainer": ["Olaf Kirch <okirch@suse.com>"],
+  "rpm": ["twopence-tcpd", "twopence-tcpd-control"],
+  "arch": ["noarch"],
+  "product": "tcpd",
+  "fate": null,
+  "bnc": null,
+  "updated_at": "2016-03-14 16:08:00 UTC",
+  "tags": ["slenkins"],
+  "nodes": ["client", "server"],
+  "incompatible": []
+}
